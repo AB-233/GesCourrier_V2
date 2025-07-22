@@ -71,6 +71,7 @@ const EditMailDialog = ({ isOpen, setIsOpen, editingMail, setEditingMail, handle
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="editSubject" className="text-slate-200">Objet du courrier *</Label>
             <Textarea

@@ -19,7 +19,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-const AddMailDialog = ({ isOpen, setIsOpen, newMail, setNewMail, handleAddMail, mailTypes, sources }) => {
+const AddMailDialog = ({
+  isOpen,
+  setIsOpen,
+  newMail,
+  setNewMail,
+  handleAddMail,
+  mailTypes,
+  sources,
+}) => {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">

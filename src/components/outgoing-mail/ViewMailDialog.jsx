@@ -37,6 +37,12 @@ const ViewMailDialog = ({ isOpen, setIsOpen, selectedMail }) => {
             <Label className="text-slate-400">Destination</Label>
             <p className="text-white">{selectedMail.destination}</p>
           </div>
+
+           <div>
+            <Label className="text-slate-200">Type de courrier :</Label>
+            <div>{selectedMail.type}</div>
+          </div>
+
           <div>
             <Label className="text-slate-400">Objet</Label>
             <p className="text-white">{selectedMail.subject}</p>

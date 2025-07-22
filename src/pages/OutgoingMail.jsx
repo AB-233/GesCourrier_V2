@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
-import { 
-  Send, 
-  Plus, 
-  Search, 
-  Filter, 
-  Calendar, 
+import {
+  Mail,
+  Plus,
+  Search,
+  Filter,
+  Calendar,
   Paperclip,
   Eye,
   Edit,
@@ -34,7 +34,7 @@ const OutgoingMail = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedMail, setSelectedMail] = useState(null);
   const [editingMail, setEditingMail] = useState(null);
-
+  
   const [newMail, setNewMail] = useState({
     signatureDate: '',
     signatureNumber: '',
@@ -49,7 +49,7 @@ const OutgoingMail = () => {
   });
 
   const destinations = [
-    'Cabinet', 'DRH', 'CPS', 'CADD', 'DNDS', 'CNAPESS', 
+    'Cabinet', 'DRH', 'CPS', 'CADD', 'DNDS', 'CNAPESS',
     'INPS', 'CMSS', 'CANAM', 'ANAM', 'AMAMUS', 'UTM', 'ODHD', 'Autres'
   ];
 
@@ -61,19 +61,23 @@ const OutgoingMail = () => {
     filterMails();
   }, [mails, searchTerm, destinationFilter]);
 
-  const loadMails = () => {
-    const storedMails = JSON.parse(localStorage.getItem('gescourrier_outgoing_mails') || '[]');
-    setMails(storedMails);
+  const loadMails = async () => {
+    try {
+      const res = await fetch('http://localhost:4000/api/outgoing-mails');
+      const data = await res.json();
+      setMails(Array.isArray(data) ? data : []);
+    } catch (error) {
+      toast({ title: "Erreur", description: "Impossible de charger les courriers", variant: "destructive" });
+    }
   };
 
   const filterMails = () => {
     let filtered = mails;
-
     if (searchTerm) {
-      filtered = filtered.filter(mail => 
-        mail.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        mail.signatureNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        mail.destination.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(mail =>
+        (mail.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (mail.signatureNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (mail.destination || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -81,13 +85,11 @@ const OutgoingMail = () => {
       filtered = filtered.filter(mail => mail.destination === destinationFilter);
     }
 
-    // Tri du plus récent au plus ancien selon la date de signature
     filtered = filtered.sort((a, b) => {
-      const dateA = mailDate(a);
-      const dateB = mailDate(b);
+      const dateA = a.signatureDate ? new Date(a.signatureDate) : new Date(0);
+      const dateB = b.signatureDate ? new Date(b.signatureDate) : new Date(0);
       return dateB - dateA;
     });
-
     setFilteredMails(filtered);
   };
 
@@ -97,8 +99,16 @@ const OutgoingMail = () => {
       ? new Date(`${mail.signatureDate}T${mail.transmissionTime || '00:00'}`)
       : new Date(0);
   }
+  // Utilitaire pour formater les dates pour l'API et les inputs
+  function toDateInputValue(dateStr) {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    const d = new Date(dateStr);
+    return d.toISOString().slice(0, 10);
+  }
 
-  const handleAddMail = () => {
+  // Charger la liste depuis l'API
+  const handleAddMail = async () => {
     if (!newMail.signatureDate || !newMail.signatureNumber || !newMail.subject || !newMail.destination) {
       toast({
         title: "Erreur",
@@ -107,36 +117,32 @@ const OutgoingMail = () => {
       });
       return;
     }
-
-    const mail = {
-      id: Date.now().toString(),
-      ...newMail,
-      createdAt: new Date().toISOString(),
-      status: 'sent'
-    };
-
-    const updatedMails = [...mails, mail];
-    setMails(updatedMails);
-    localStorage.setItem('gescourrier_outgoing_mails', JSON.stringify(updatedMails));
-
-    toast({
-      title: "Courrier ajouté",
-      description: "Le courrier de départ a été enregistré avec succès.",
-    });
-
-    setNewMail({
-      signatureDate: '',
-      signatureNumber: '',
-      destination: '',
-      subject: '',
-      attachment: '',
-      receptionist: '',
-      transmissionDate: '',
-      transmissionTime: '',
-      transmissionNumber: '',
-      observations: ''
-    });
-    setIsAddDialogOpen(false);
+    try {
+      const mailToSend = {
+        ...newMail,
+        signatureDate: toDateInputValue(newMail.signatureDate),
+        transmissionDate: toDateInputValue(newMail.transmissionDate),
+      };
+      const res = await fetch('http://localhost:4000/api/outgoing-mails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mailToSend)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Courrier ajouté",
+          description: "Le courrier départ a été enregistré avec succès.",
+        });
+        setNewMail(defaultMail);
+        setIsAddDialogOpen(false);
+        loadMails();
+      } else {
+        toast({ title: "Erreur", description: data.error || "Erreur lors de l'enregistrement", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau", variant: "destructive" });
+    }
   };
 
   const handleViewMail = (mail) => {
@@ -149,7 +155,7 @@ const OutgoingMail = () => {
     setIsEditDialogOpen(true);
   };
 
-  const handleUpdateMail = () => {
+  const handleUpdateMail = async () => {
     if (!editingMail.signatureDate || !editingMail.signatureNumber || !editingMail.subject || !editingMail.destination) {
       toast({
         title: "Erreur",
@@ -158,30 +164,61 @@ const OutgoingMail = () => {
       });
       return;
     }
-
-    const updatedMails = mails.map(m => m.id === editingMail.id ? editingMail : m);
-    setMails(updatedMails);
-    localStorage.setItem('gescourrier_outgoing_mails', JSON.stringify(updatedMails));
-
-    toast({
-      title: "Courrier modifié",
-      description: "Le courrier de départ a été mis à jour avec succès.",
-    });
-
-    setEditingMail(null);
-    setIsEditDialogOpen(false);
+    try {
+      const mailToSend = {
+        ...editingMail,
+        signatureDate: toDateInputValue(editingMail.signatureDate),
+        transmissionDate: toDateInputValue(editingMail.transmissionDate),
+      };
+      const url = `http://localhost:4000/api/outgoing-mails/${editingMail.id}`;
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(mailToSend),
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        toast({ title: "Erreur", description: "Réponse du serveur invalide", variant: "destructive" });
+        return;
+      }
+      if (data.success) {
+        toast({
+          title: "Courrier modifié",
+          description: "Le courrier départ a été mis à jour avec succès.",
+        });
+        setEditingMail(null);
+        setIsEditDialogOpen(false);
+        loadMails();
+      } else {
+        toast({ title: "Erreur", description: data.error || "Erreur lors de la modification", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau: " + error.message, variant: "destructive" });
+    }
   };
 
-
-  const handleDeleteMail = (mailId) => {
-    const updatedMails = mails.filter(mail => mail.id !== mailId);
-    setMails(updatedMails);
-    localStorage.setItem('gescourrier_outgoing_mails', JSON.stringify(updatedMails));
-    
-    toast({
-      title: "Courrier supprimé",
-      description: "Le courrier a été supprimé avec succès.",
-    });
+  const handleDeleteMail = async (mailId) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/outgoing-mails/${mailId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Courrier supprimé",
+          description: "Le courrier a été supprimé avec succès.",
+        });
+        loadMails();
+      } else {
+        toast({ title: "Erreur", description: data.error || "Erreur lors de la suppression", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau", variant: "destructive" });
+    }
   };
 
   return (
@@ -200,7 +237,7 @@ const OutgoingMail = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold gradient-text flex items-center">
-                <Send className="mr-3 h-8 w-8" />
+                <Mail className="mr-3 h-8 w-8" />
                 Courriers départ
               </h1>
               <p className="text-slate-300 mt-2">
@@ -244,7 +281,7 @@ const OutgoingMail = () => {
                     />
                   </div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label className="text-slate-200">Destination</Label>
                   <Select value={destinationFilter} onValueChange={setDestinationFilter}>
@@ -261,7 +298,7 @@ const OutgoingMail = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="flex items-end">
                   <Button
                     onClick={() => {
@@ -297,7 +334,7 @@ const OutgoingMail = () => {
               <div className="space-y-4">
                 {filteredMails.length === 0 ? (
                   <div className="text-center py-8">
-                    <Send className="mx-auto h-12 w-12 text-slate-400 mb-4" />
+                    <Mail className="mx-auto h-12 w-12 text-slate-400 mb-4" />
                     <p className="text-slate-400">Aucun courrier trouvé</p>
                   </div>
                 ) : (
@@ -311,7 +348,7 @@ const OutgoingMail = () => {
                     >
                       <div className="flex items-start space-x-4 flex-1">
                         <div className="p-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600">
-                          <Send className="h-5 w-5 text-white" />
+                          <Mail className="h-5 w-5 text-white" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2 mb-1">
@@ -324,26 +361,25 @@ const OutgoingMail = () => {
                           <div className="flex items-center space-x-4 text-xs text-slate-400">
                             <span className="flex items-center">
                               <Calendar className="mr-1 h-3 w-3" />
-                              {new Date(mail.signatureDate).toLocaleDateString('fr-FR')}
+                              {mail.signatureDate ? new Date(mail.signatureDate).toLocaleDateString('fr-FR') : 'N/A'}
                             </span>
                             {mail.attachment && (
                               <span className="flex items-center">
                                 <Paperclip className="mr-1 h-3 w-3" />
                                 <a
-                                  href={mail.attachment}
-                                  download={mail.attachmentName || "piece-jointe"}
-                                  className="text-blue-400 underline ml-1"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  Télécharger
-                                </a>
+                                href={`http://localhost:4000/api/outgoing-mails/${mail.id}/attachment`}
+                                className="text-blue-400 underline ml-1"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Télécharger
+                              </a>
                               </span>
                             )}
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Button
                           variant="ghost"
@@ -353,7 +389,7 @@ const OutgoingMail = () => {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        
+
                         <Button
                           variant="ghost"
                           size="icon"
@@ -362,7 +398,7 @@ const OutgoingMail = () => {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        
+
                         <Button
                           variant="ghost"
                           size="icon"
@@ -394,7 +430,7 @@ const OutgoingMail = () => {
           setIsOpen={setIsViewDialogOpen}
           selectedMail={selectedMail}
         />
-        
+
         <EditMailDialog
           isOpen={isEditDialogOpen}
           setIsOpen={setIsEditDialogOpen}

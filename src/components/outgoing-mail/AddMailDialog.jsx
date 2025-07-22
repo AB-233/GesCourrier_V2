@@ -19,7 +19,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-const AddMailDialog = ({ isOpen, setIsOpen, newMail, setNewMail, handleAddMail, destinations }) => {
+const AddMailDialog = ({ 
+  isOpen, 
+  setIsOpen, 
+  newMail, 
+  setNewMail, 
+  handleAddMail, 
+  destinations,
+ }) => {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -69,6 +76,7 @@ const AddMailDialog = ({ isOpen, setIsOpen, newMail, setNewMail, handleAddMail, 
               </SelectContent>
             </Select>
           </div>
+                    
           <div className="space-y-2">
             <Label htmlFor="subject" className="text-slate-200">Objet du courrier *</Label>
             <Textarea

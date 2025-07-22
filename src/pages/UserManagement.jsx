@@ -17,9 +17,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import EditUserDialog from '@/components/users/EditUserDialog';
+import { useAuth } from '@/contexts/AuthContext';
 
 const UserManagement = () => {
   const { toast } = useToast();
+  const { fetchUsers, updateUser, deleteUser, setUserActive } = useAuth();
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,15 +37,21 @@ const UserManagement = () => {
 
   useEffect(() => {
     loadUsers();
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
     filterUsers();
+    // eslint-disable-next-line
   }, [users, searchTerm, roleFilter, statusFilter]);
 
-  const loadUsers = () => {
-    const storedUsers = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
-    setUsers(storedUsers);
+  const loadUsers = async () => {
+    const res = await fetchUsers();
+    if (res.success) {
+      setUsers(res.users);
+    } else {
+      toast({ title: "Erreur", description: res.error, variant: "destructive" });
+    }
   };
 
   const filterUsers = () => {
@@ -51,9 +59,9 @@ const UserManagement = () => {
 
     if (searchTerm) {
       filtered = filtered.filter(user => 
-        user.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase())
+        user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -70,45 +78,41 @@ const UserManagement = () => {
     setFilteredUsers(filtered);
   };
 
-  const toggleUserStatus = (userId) => {
-    const updatedUsers = users.map(user => 
-      user.id === userId ? { ...user, isActive: !user.isActive } : user
-    );
-    setUsers(updatedUsers);
-    localStorage.setItem('gescourrier_users', JSON.stringify(updatedUsers));
-    
-    const user = updatedUsers.find(u => u.id === userId);
-    toast({
-      title: user.isActive ? "Utilisateur activé" : "Utilisateur désactivé",
-      description: `${user.firstName} ${user.lastName} a été ${user.isActive ? 'activé' : 'désactivé'}.`,
-    });
+  const toggleUserStatus = async (userId) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    const res = await setUserActive(userId, !user.isActive);
+    if (res.success) {
+      loadUsers();
+      toast({
+        title: !user.isActive ? "Utilisateur activé" : "Utilisateur désactivé",
+        description: `${user.firstName} ${user.lastName} a été ${!user.isActive ? 'activé' : 'désactivé'}.`,
+      });
+    } else {
+      toast({ title: "Erreur", description: res.error, variant: "destructive" });
+    }
   };
 
-  const deleteUser = (userId) => {
-    const updatedUsers = users.filter(user => user.id !== userId);
-    setUsers(updatedUsers);
-    localStorage.setItem('gescourrier_users', JSON.stringify(updatedUsers));
-    
-    toast({
-      title: "Utilisateur supprimé",
-      description: "L'utilisateur a été supprimé avec succès.",
-    });
+  const handleDeleteUser = async (userId) => {
+    const res = await deleteUser(userId);
+    if (res.success) {
+      loadUsers();
+      toast({ title: "Utilisateur supprimé", description: "L'utilisateur a été supprimé avec succès." });
+    } else {
+      toast({ title: "Erreur", description: res.error, variant: "destructive" });
+    }
   };
 
-  const updateUser = (updatedUser) => {
-    const updatedUsers = users.map(user => 
-      user.id === updatedUser.id ? { ...user, ...updatedUser } : user
-    );
-    setUsers(updatedUsers);
-    localStorage.setItem('gescourrier_users', JSON.stringify(updatedUsers));
-    
-    toast({
-      title: "Utilisateur modifié",
-      description: "Les informations de l'utilisateur ont été mises à jour.",
-    });
-    
-    setIsEditDialogOpen(false);
-    setEditingUser(null);
+  const handleUpdateUser = async (updatedUser) => {
+    const res = await updateUser(updatedUser.id, updatedUser);
+    if (res.success) {
+      loadUsers();
+      toast({ title: "Utilisateur modifié", description: "Les informations de l'utilisateur ont été mises à jour." });
+      setIsEditDialogOpen(false);
+      setEditingUser(null);
+    } else {
+      toast({ title: "Erreur", description: res.error, variant: "destructive" });
+    }
   };
 
   const handleEditUser = (user) => {
@@ -301,7 +305,7 @@ const UserManagement = () => {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => deleteUser(user.id)}
+                          onClick={() => handleDeleteUser(user.id)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -321,7 +325,7 @@ const UserManagement = () => {
           editingUser={editingUser}
           setEditingUser={setEditingUser}
           roles={roles}
-          updateUser={updateUser}
+          updateUser={handleUpdateUser}
         />
       </div>
     </>

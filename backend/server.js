@@ -1,0 +1,332 @@
+import express from 'express';
+import mysql from 'mysql2/promise';
+import cors from 'cors';
+import bcrypt from 'bcryptjs';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const db = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: '',
+  database: 'gescourrier'
+});
+
+// Inscription
+app.post('/api/register', async (req, res) => {
+  const { firstName, lastName, email, role, password } = req.body;
+  const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+  if (users.length > 0) return res.status(400).json({ error: 'Email déjà utilisé' });
+  const hash = await bcrypt.hash(password, 10);
+  await db.query(
+    'INSERT INTO users (firstName, lastName, email, role, password, isActive, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [firstName, lastName, email, role, hash, false, new Date()]
+  );
+  res.json({ success: true });
+});
+
+// Connexion
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+  if (users.length === 0) return res.status(400).json({ error: 'Utilisateur non trouvé' });
+  const user = users[0];
+  if (!user.isActive) return res.status(403).json({ error: 'Compte désactivé' });
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) return res.status(400).json({ error: 'Mot de passe incorrect' });
+  res.json({ success: true, user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, role: user.role } });
+});
+
+// Liste des utilisateurs
+app.get('/api/users', async (req, res) => {
+  const [users] = await db.query('SELECT id, firstName, lastName, email, role, isActive, createdAt FROM users');
+  res.json(users);
+});
+
+// Mettre à jour un utilisateur (par l'admin)
+app.put('/api/users/:id', async (req, res) => {
+  const { firstName, lastName, email, role, isActive } = req.body;
+  try {
+    await db.query(
+      'UPDATE users SET firstName=?, lastName=?, email=?, role=?, isActive=? WHERE id=?',
+      [firstName, lastName, email, role, isActive, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la mise à jour de l'utilisateur" });
+  }
+});
+
+// Supprimer un utilisateur (par l'admin)
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    await db.query('DELETE FROM users WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la suppression de l'utilisateur" });
+  }
+});
+
+// Activer/désactiver un utilisateur (par l'admin)
+app.patch('/api/users/:id/activate', async (req, res) => {
+  const { isActive } = req.body;
+  try {
+    await db.query('UPDATE users SET isActive=? WHERE id=?', [isActive, req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors du changement d'état du compte" });
+  }
+});
+
+// Ajouter un courrier arrivée
+app.post('/api/incoming-mails', async (req, res) => {
+  const {
+    arrivalDate,
+    arrivalTime,
+    arrivalNumber,
+    signatureDate,
+    signatureNumber,
+    source,
+    type,
+    subject,
+    attachment,
+    attachmentName,
+    receptionist,
+    observations
+  } = req.body;
+  try {
+    await db.query(
+      `INSERT INTO incoming_mails 
+        (arrivalDate, arrivalTime, arrivalNumber, signatureDate, signatureNumber, source, type, subject, attachment, attachmentName, receptionist, observations) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        arrivalDate,
+        arrivalTime,
+        arrivalNumber,
+        signatureDate,
+        signatureNumber,
+        source,
+        type,
+        subject,
+        attachment ? Buffer.from(attachment.split(',')[1], 'base64') : null,
+        attachmentName,
+        receptionist,
+        observations
+      ]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de l'ajout du courrier" });
+  }
+});
+
+// Liste des courriers arrivée
+app.get('/api/incoming-mails', async (req, res) => {
+  try {
+    const [send] = await db.query(
+      'SELECT id, arrivalDate, arrivalTime, arrivalNumber, signatureDate, signatureNumber, source, type, subject, attachmentName, receptionist, observations, createdAt FROM incoming_mails ORDER BY arrivalDate DESC'
+    );
+    res.json(send);
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la récupération des courriers" });
+  }
+});
+
+// Mettre à jour un courrier arrivée (par l'admin)
+app.put('/api/incoming-mails/:id', async (req, res) => {
+  const {
+    arrivalDate,
+    arrivalTime,
+    arrivalNumber,
+    signatureDate,
+    signatureNumber,
+    source,
+    type,
+    subject,
+    attachment,
+    attachmentName,
+    receptionist,
+    observations
+  } = req.body;
+  try {
+    await db.query(
+      `UPDATE incoming_mails SET 
+        arrivalDate=?, arrivalTime=?, arrivalNumber=?, signatureDate=?, signatureNumber=?, source=?, type=?, subject=?, attachment=?, attachmentName=?, receptionist=?, observations=? 
+      WHERE id=?`,
+      [
+        arrivalDate,
+        arrivalTime,
+        arrivalNumber,
+        signatureDate,
+        signatureNumber,
+        source,
+        type,
+        subject,
+        attachment ? Buffer.from(attachment.split(',')[1], 'base64') : null,
+        attachmentName,
+        receptionist,
+        observations,
+        req.params.id
+      ]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la mise à jour du courrier arrivé" });
+  }
+});
+
+// Supprimer un courrier arrivée (par l'admin)
+app.delete('/api/incoming-mails/:id', async (req, res) => {
+  try {
+    await db.query('DELETE FROM incoming_mails WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la suppression du courrier" });
+  }
+});
+
+// Ajouter un courrier départ
+app.post('/api/outgoing-mails', async (req, res) => {
+  const {
+    signatureDate,
+    signatureNumber,
+    destination,
+    subject,
+    attachment,
+    attachmentName,
+    receptionist,
+    transmissionDate,
+    transmissionTime,
+    transmissionNumber,
+    observations,
+  } = req.body;
+  try {
+    await db.query(
+      `INSERT INTO outgoing_mails 
+        (signatureDate, signatureNumber, destination, subject, attachment, attachmentName, receptionist, transmissionDate, transmissionTime, transmissionNumber, observations) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+    signatureDate,
+    signatureNumber,
+    destination,
+    subject,
+    attachment && typeof attachment === 'string' && attachment.includes(',') 
+  ? Buffer.from(attachment.split(',')[1], 'base64') 
+  : null,
+    attachmentName,
+    receptionist,
+    transmissionDate,
+    transmissionTime,
+    transmissionNumber,
+    observations,
+      ]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de l'ajout du courrier départ" });
+  }
+});
+
+// Liste des courriers départ
+app.get('/api/outgoing-mails', async (req, res) => {
+  try {
+    const [mails] = await db.query(
+      'SELECT id, signatureDate, signatureNumber, destination, subject, attachment, attachmentName, receptionist, transmissionDate, transmissionTime, transmissionNumber, observations, createdAt FROM outgoing_mails ORDER BY signatureDate DESC'
+    );
+    res.json(mails);
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la récupération des courriers départ" });
+  }
+});
+
+// Mettre à jour un courrier départ
+app.put('/api/outgoing-mails/:id', async (req, res) => {
+  const {
+    signatureDate,
+    signatureNumber,
+    destination,
+    subject,
+    attachment,
+    attachmentName,
+    receptionist,
+    transmissionDate,
+    transmissionTime,
+    transmissionNumber,
+    observations,
+  } = req.body;
+  try {
+    await db.query(
+      `UPDATE outgoing_mails SET 
+    signatureDate=?, signatureNumber=?, destination=?, subject=?, attachment=?, attachmentName=?, receptionist=?, transmissionDate=?, transmissionTime=?, transmissionNumber=?, observations=? 
+      WHERE id=?`,
+      [
+    signatureDate,
+    signatureNumber,
+    destination,
+    subject,
+    attachment && typeof attachment === 'string' && attachment.includes(',') 
+  ? Buffer.from(attachment.split(',')[1], 'base64') 
+  : null,
+    attachmentName,
+    receptionist,
+    transmissionDate,
+    transmissionTime,
+    transmissionNumber,
+    observations,
+    req.params.id
+      ]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error); 
+    res.status(500).json({ error: "Erreur lors de la mise à jour du courrier départ" });
+  }
+});
+
+// Supprimer un courrier départ
+app.delete('/api/outgoing-mails/:id', async (req, res) => {
+  try {
+    await db.query('DELETE FROM outgoing_mails WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la suppression du courrier départ" });
+  }
+});
+
+app.get('/api/outgoing-mails/:id/attachment', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const [rows] = await db.query('SELECT attachment, attachmentName FROM outgoing_mails WHERE id = ?', [id]);
+    if (rows.length === 0 || !rows[0].attachment) {
+      return res.status(404).send('Aucune pièce jointe');
+    }
+    const buffer = rows[0].attachment;
+    const filename = rows[0].attachmentName || 'piece-jointe';
+    res.setHeader('Content-Disposition', `attachment; filename=\"${filename}\"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).send('Erreur lors du téléchargement de la pièce jointe');
+  }
+});
+
+app.get('/api/incoming-mails/:id/attachment', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const [rows] = await db.query('SELECT attachment, attachmentName FROM incoming_mails WHERE id = ?', [id]);
+    if (rows.length === 0 || !rows[0].attachment) {
+      return res.status(404).send('Aucune pièce jointe');
+    }
+    const buffer = rows[0].attachment;
+    const filename = rows[0].attachmentName || 'piece-jointe';
+    res.setHeader('Content-Disposition', `attachment; filename=\"${filename}\"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).send('Erreur lors du téléchargement de la pièce jointe');
+  }
+});
+
+app.listen(4000, () => console.log('API running on http://localhost:4000'));

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import bcrypt from 'bcryptjs';
 
 const AuthContext = createContext();
 
@@ -19,39 +18,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const usersRaw = localStorage.getItem('gescourrier_users');
-        let users = usersRaw ? JSON.parse(usersRaw) : [];
-
-        if (users.length === 0) {
-          const hashedPassword = await bcrypt.hash('admin123', 10);
-          
-          const adminUser = {
-            id: Date.now().toString(),
-            firstName: 'Admin',
-            lastName: 'GesCourrier',
-            email: 'admin@gescourrier.com',
-            role: 'ADMIN',
-            password: hashedPassword,
-            isActive: true,
-            createdAt: new Date().toISOString()
-          };
-          
-          users.push(adminUser);
-          localStorage.setItem('gescourrier_users', JSON.stringify(users));
-        }
-
         const storedUser = localStorage.getItem('gescourrier_user');
         if (storedUser) {
-          const userData = JSON.parse(storedUser);
-          const allUsers = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
-          const userExists = allUsers.find(u => u.id === userData.id);
-
-          if (userExists && userExists.isActive) {
-            setUser(userData);
-            setIsAuthenticated(true);
-          } else {
-            localStorage.removeItem('gescourrier_user');
-          }
+          setUser(JSON.parse(storedUser));
+          setIsAuthenticated(true);
         }
       } catch (error) {
         console.error("Erreur lors de l'initialisation de l'authentification:", error);
@@ -65,34 +35,16 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const users = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
-      const userToLogin = users.find(u => u.email === email);
-      
-      if (!userToLogin) {
-        throw new Error('Utilisateur non trouvé');
-      }
-      
-      if (!userToLogin.isActive) {
-        throw new Error('Ce compte est désactivé. Veuillez contacter un administrateur.');
-      }
-
-      const isValidPassword = await bcrypt.compare(password, userToLogin.password);
-      if (!isValidPassword) {
-        throw new Error('Mot de passe incorrect');
-      }
-
-      const userSession = {
-        id: userToLogin.id,
-        firstName: userToLogin.firstName,
-        lastName: userToLogin.lastName,
-        email: userToLogin.email,
-        role: userToLogin.role
-      };
-
-      setUser(userSession);
+      const res = await fetch('http://localhost:4000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setUser(data.user);
       setIsAuthenticated(true);
-      localStorage.setItem('gescourrier_user', JSON.stringify(userSession));
-      
+      localStorage.setItem('gescourrier_user', JSON.stringify(data.user));
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -107,28 +59,71 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      const users = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
-      
-      if (users.find(u => u.email === userData.email)) {
-        throw new Error('Un utilisateur avec cet email existe déjà');
-      }
+      const res = await fetch('http://localhost:4000/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
 
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      
-      const newUser = {
-        id: Date.now().toString(),
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        email: userData.email,
-        role: userData.role,
-        password: hashedPassword,
-        isActive: false,
-        createdAt: new Date().toISOString()
-      };
+  // Liste des utilisateurs (admin)
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch('http://localhost:4000/api/users');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return { success: true, users: data };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
 
-      users.push(newUser);
-      localStorage.setItem('gescourrier_users', JSON.stringify(users));
-      
+  // Modifier un utilisateur (admin)
+  const updateUser = async (id, userData) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/users/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Supprimer un utilisateur (admin)
+  const deleteUser = async (id) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/users/${id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Activer/désactiver un utilisateur (admin)
+  const setUserActive = async (id, isActive) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/users/${id}/activate`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -141,7 +136,11 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     logout,
-    register
+    register,
+    fetchUsers,
+    updateUser,
+    deleteUser,
+    setUserActive
   };
 
   return (

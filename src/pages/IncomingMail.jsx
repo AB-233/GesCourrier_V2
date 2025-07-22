@@ -16,12 +16,27 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { DialogTrigger } from '@/components/ui/dialog';
+//import { DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import AddMailDialog from '@/components/incoming-mail/AddMailDialog';
 import ViewMailDialog from '@/components/incoming-mail/ViewMailDialog';
 import EditMailDialog from '@/components/incoming-mail/EditMailDialog';
+
+const defaultMail = {
+  arrivalDate: '',
+  arrivalTime: '',
+  arrivalNumber: '',
+  signatureDate: '',
+  signatureNumber: '',
+  source: '',
+  type: '',
+  subject: '',
+  attachment: '',
+  attachmentName: '',
+  receptionist: '',
+  observations: ''
+};
 
 const IncomingMail = () => {
   const { toast } = useToast();
@@ -35,20 +50,7 @@ const IncomingMail = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedMail, setSelectedMail] = useState(null);
   const [editingMail, setEditingMail] = useState(null);
-
-  const [newMail, setNewMail] = useState({
-    arrivalDate: '',
-    arrivalTime: '',
-    arrivalNumber: '',
-    signatureDate: '',
-    signatureNumber: '',
-    source: '',
-    type: '',
-    subject: '',
-    attachment: '',
-    receptionist: '',
-    observations: ''
-  });
+  const [newMail, setNewMail] = useState(defaultMail);
 
   const mailTypes = [
     'Lettre', 'Avis', 'BE', 'ST', 'FC', 'OM', 
@@ -60,18 +62,26 @@ const IncomingMail = () => {
     'INPS', 'CMSS', 'CANAM', 'ANAM', 'AMAMUS', 'UTM', 'ODHD', 'Autres'
   ];
 
+  // Charger la liste depuis l'API
+  const loadMails = async () => {
+    try {
+      const res = await fetch('http://localhost:4000/api/incoming-mails');
+      const data = await res.json();
+      setMails(Array.isArray(data) ? data : []);
+    } catch (error) {
+      toast({ title: "Erreur", description: "Impossible de charger les courriers", variant: "destructive" });
+    }
+  };
+
   useEffect(() => {
     loadMails();
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
     filterMails();
+    // eslint-disable-next-line
   }, [mails, searchTerm, typeFilter, sourceFilter]);
-
-  const loadMails = () => {
-    const storedMails = JSON.parse(localStorage.getItem('gescourrier_incoming_mails') || '[]');
-    setMails(storedMails);
-  };
 
   const filterMails = () => {
     let filtered = mails;
@@ -92,7 +102,6 @@ const IncomingMail = () => {
       filtered = filtered.filter(mail => mail.source === sourceFilter);
     }
 
-    // Tri robuste : si date ou heure manquante, on considère la date la plus ancienne
     filtered = filtered.sort((a, b) => {
       const dateA = a.arrivalDate
         ? new Date(`${a.arrivalDate}T${a.arrivalTime || '00:00'}`)
@@ -106,7 +115,8 @@ const IncomingMail = () => {
     setFilteredMails(filtered);
   };
 
-  const handleAddMail = () => {
+  // Ajouter un courrier via l'API
+  const handleAddMail = async () => {
     if (!newMail.arrivalDate || !newMail.arrivalNumber || !newMail.subject || !newMail.source || !newMail.type) {
       toast({
         title: "Erreur",
@@ -116,49 +126,43 @@ const IncomingMail = () => {
       return;
     }
 
-    const mail = {
-      id: Date.now().toString(),
-      ...newMail,
-      createdAt: new Date().toISOString(),
-      status: 'pending'
-    };
-
-    const updatedMails = [...mails, mail];
-    setMails(updatedMails);
-    localStorage.setItem('gescourrier_incoming_mails', JSON.stringify(updatedMails));
-
-    toast({
-      title: "Courrier ajouté",
-      description: "Le courrier d'arrivée a été enregistré avec succès.",
-    });
-
-    setNewMail({
-      arrivalDate: '',
-      arrivalTime: '',
-      arrivalNumber: '',
-      signatureDate: '',
-      signatureNumber: '',
-      source: '',
-      type: '',
-      subject: '',
-      attachment: '',
-      receptionist: '',
-      observations: ''
-    });
-    setIsAddDialogOpen(false);
+    try {
+      const res = await fetch('http://localhost:4000/api/incoming-mails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMail)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Courrier ajouté",
+          description: "Le courrier d'arrivée a été enregistré avec succès.",
+        });
+        setNewMail(defaultMail);
+        setIsAddDialogOpen(false);
+        loadMails();
+      } else {
+        toast({ title: "Erreur", description: data.error || "Erreur lors de l'enregistrement", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau", variant: "destructive" });
+    }
   };
 
+  // Voir un courrier
   const handleViewMail = (mail) => {
     setSelectedMail(mail);
     setIsViewDialogOpen(true);
   };
   
-  const handleEditClick = (mail) => {
-    setEditingMail({ ...mail });
+  // Préparer l'édition
+  const handleEditClick = (editingMail) => {
+    setEditingMail({ ...editingMail });
     setIsEditDialogOpen(true);
   };
 
-  const handleUpdateMail = () => {
+  // Mettre à jour un courrier via l'API
+  const handleUpdateMail = async () => {
     if (!editingMail.arrivalDate || !editingMail.arrivalNumber || !editingMail.subject || !editingMail.source || !editingMail.type) {
       toast({
         title: "Erreur",
@@ -168,28 +172,48 @@ const IncomingMail = () => {
       return;
     }
 
-    const updatedMails = mails.map(m => m.id === editingMail.id ? editingMail : m);
-    setMails(updatedMails);
-    localStorage.setItem('gescourrier_incoming_mails', JSON.stringify(updatedMails));
-
-    toast({
-      title: "Courrier modifié",
-      description: "Le courrier d'arrivée a été mis à jour avec succès.",
-    });
-
-    setEditingMail(null);
-    setIsEditDialogOpen(false);
+    try {
+      const res = await fetch(`http://localhost:4000/api/incoming-mails/${editingMail.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingMail)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Courrier modifié",
+          description: "Le courrier d'arrivée a été mis à jour avec succès.",
+        });
+        setEditingMail(null);
+        setIsEditDialogOpen(false);
+        loadMails();
+      } else {
+        toast({ title: "Erreur", description: data.error || "Erreur lors de la modification", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau", variant: "destructive" });
+    }
   };
 
-  const handleDeleteMail = (mailId) => {
-    const updatedMails = mails.filter(mail => mail.id !== mailId);
-    setMails(updatedMails);
-    localStorage.setItem('gescourrier_incoming_mails', JSON.stringify(updatedMails));
-    
-    toast({
-      title: "Courrier supprimé",
-      description: "Le courrier a été supprimé avec succès.",
-    });
+  // Supprimer un courrier via l'API
+  const handleDeleteMail = async (mailId) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/incoming-mails/${mailId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Courrier supprimé",
+          description: "Le courrier a été supprimé avec succès.",
+        });
+        loadMails();
+      } else {
+        toast({ title: "Erreur", description: data.error || "Erreur lors de la suppression", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau", variant: "destructive" });
+    }
   };
 
   return (
@@ -353,20 +377,19 @@ const IncomingMail = () => {
                           <div className="flex items-center space-x-4 text-xs text-slate-400">
                             <span className="flex items-center">
                               <Calendar className="mr-1 h-3 w-3" />
-                              {new Date(mail.arrivalDate).toLocaleDateString('fr-FR')}
+                              {mail.arrivalDate ? new Date(mail.arrivalDate).toLocaleDateString('fr-FR') : ''}
                             </span>
-                            {mail.attachment && (
+                            {mail.attachmentName && (
                               <span className="flex items-center">
                                 <Paperclip className="mr-1 h-3 w-3" />
-                                <a
-                                  href={mail.attachment}
-                                  download={mail.attachmentName || "piece-jointe"}
-                                  className="text-blue-400 underline ml-1"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  Télécharger
-                                </a>
+                               <a
+                                href={`http://localhost:4000/api/incoming-mails/${mail.id}/attachment`}
+                                className="text-blue-400 underline ml-1"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Télécharger
+                              </a>
                               </span>
                             )}
                           </div>
