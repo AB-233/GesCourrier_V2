@@ -37,16 +37,23 @@ const MailArchive = () => {
     filterMails();
   }, [archivedMails, searchTerm, typeFilter]);
 
-  const loadArchivedMails = () => {
-    const assignments = JSON.parse(localStorage.getItem('gescourrier_assignments') || '[]');
-    const incomingMails = JSON.parse(localStorage.getItem('gescourrier_incoming_mails') || '[]');
-    const users = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
+  const loadArchivedMails = async () => {
+    // Récupère les données depuis l'API
+    const assignmentsRes = await fetch('http://localhost:4000/api/assignments');
+    const assignmentsData = await assignmentsRes.json();
 
-    const processedAssignments = assignments
+    const incomingRes = await fetch('http://localhost:4000/api/incoming-mails');
+    const incomingData = await incomingRes.json();
+
+    const usersRes = await fetch('http://localhost:4000/api/users');
+    const usersData = await usersRes.json();
+
+    // Filtre les assignments archivés ou traités
+    const processedAssignments = assignmentsData
       .filter(assignment => assignment.status === 'processed' || assignment.status === 'archived')
       .map(assignment => {
-        const mail = incomingMails.find(m => m.id === assignment.mailId);
-        const processedBy = users.find(u => u.id === assignment.processedBy);
+        const mail = incomingData.find(m => String(m.id) === String(assignment.mailId));
+        const processedBy = usersData.find(u => String(u.id) === String(assignment.processedBy));
         return {
           ...assignment,
           mail,
@@ -91,23 +98,22 @@ const MailArchive = () => {
     setIsViewDialogOpen(true);
   };
 
-  const handleReassign = (item) => {
-    const assignments = JSON.parse(localStorage.getItem('gescourrier_assignments') || '[]');
-    const updatedAssignments = assignments.map(assignment => {
-      if (assignment.id === item.id) {
-        return { ...assignment, status: 'pending' };
-      }
-      return assignment;
+  const handleReassign = async (item) => {
+    const res = await fetch(`http://localhost:4000/api/assignments/${item.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' })
     });
-
-    localStorage.setItem('gescourrier_assignments', JSON.stringify(updatedAssignments));
-    
-    toast({
-      title: "Courrier réaffecté",
-      description: "Le courrier a été remis en attente.",
-    });
-
-    loadArchivedMails();
+    const data = await res.json();
+    if (data.success) {
+      toast({
+        title: "Courrier réaffecté",
+        description: "Le courrier a été remis en attente.",
+      });
+      loadArchivedMails();
+    } else {
+      toast({ title: "Erreur", description: data.error, variant: "destructive" });
+    }
   };
 
   return (

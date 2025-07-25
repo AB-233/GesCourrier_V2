@@ -32,7 +32,8 @@ const MailAssignment = () => {
   const [users, setUsers] = useState([]);
   const [filteredMails, setFilteredMails] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  // Supprimer statusFilter et toute référence associée
+  // const [statusFilter, setStatusFilter] = useState('all');
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedMail, setSelectedMail] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -44,69 +45,74 @@ const MailAssignment = () => {
 
   useEffect(() => {
     filterMails();
-  }, [incomingMails, assignments, searchTerm, statusFilter]);
+  }, [incomingMails, assignments, searchTerm]);
 
-  const loadData = () => {
-    const storedIncomingMails = JSON.parse(localStorage.getItem('gescourrier_incoming_mails') || '[]');
-    const storedAssignments = JSON.parse(localStorage.getItem('gescourrier_assignments') || '[]');
-    const storedUsers = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
+  const loadData = async () => {
+    // Courriers arrivés
+    const incomingRes = await fetch('http://localhost:4000/api/incoming-mails');
+    const incomingData = await incomingRes.json();
+    setIncomingMails(Array.isArray(incomingData) ? incomingData.map(m => ({ ...m, id: String(m.id) })) : []);
+
+   
+    // Utilisateurs
+    const usersRes = await fetch('http://localhost:4000/api/users');
+    const usersData = await usersRes.json();
+    setUsers(Array.isArray(usersData) ? usersData.filter(u => u.isActive) : []);
     
-    setIncomingMails(storedIncomingMails);
-    setAssignments(storedAssignments);
-    setUsers(storedUsers.filter(u => u.isActive));
+    // Pour les assignments, il faut une API dédiée côté backend
+    const assignmentsRes = await fetch('http://localhost:4000/api/assignments');
+    const assignmentsData = await assignmentsRes.json();
+    setAssignments(Array.isArray(assignmentsData) ? assignmentsData.map(a => ({ ...a, mailId: String(a.mailId) })) : []);
   };
 
   const filterMails = () => {
-    let filtered = incomingMails.map(mail => {
-      const assignment = assignments.find(a => a.mailId === mail.id);
-      return {
-        ...mail,
-        assignment: assignment || null,
-        status: assignment ? assignment.status : 'unassigned'
-      };
-    });
+    console.log(
+      "incomingMails ids:", incomingMails.map(m => m.id),
+      "assignedMailIds:", assignments.map(a => a.mailId)
+    );
+    console.log(
+      "Types incomingMails ids:", incomingMails.map(m => typeof m.id),
+      "Types assignedMailIds:", assignments.map(a => typeof a.mailId)
+    );
+    // Exclure les courriers qui ont déjà une affectation (comparaison robuste sur les types)
+    const assignedMailIds = assignments.map(a => String(a.mailId));
+    let filtered = incomingMails.filter(mail => !assignedMailIds.includes(String(mail.id)));
 
-    // Ne garder que les courriers non affectés (ou selon le filtre)
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(mail => mail.status === statusFilter);
-    } else {
-      filtered = filtered.filter(mail => mail.status === 'unassigned');
-    }
-
+    // Appliquer le filtre de recherche
     if (searchTerm) {
-      filtered = filtered.filter(mail => 
-        mail.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        mail.arrivalNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        mail.source.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(mail =>
+        (mail.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (mail.arrivalNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (mail.source || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
-    // Tri du plus récent au plus ancien selon la date d'arrivée
+    // Tri du plus récent au plus ancien
     filtered = filtered.sort((a, b) => {
-      const dateA = a.arrivalDate
-        ? new Date(`${a.arrivalDate}T${a.arrivalTime || '00:00'}`)
-        : new Date(0);
-      const dateB = b.arrivalDate
-        ? new Date(`${b.arrivalDate}T${b.arrivalTime || '00:00'}`)
-        : new Date(0);
+      const dateA = a.arrivalDate ? new Date(`${a.arrivalDate}T${a.arrivalTime || '00:00'}`) : new Date(0);
+      const dateB = b.arrivalDate ? new Date(`${b.arrivalDate}T${b.arrivalTime || '00:00'}`) : new Date(0);
       return dateB - dateA;
     });
 
     setFilteredMails(filtered);
   };
 
-  const handleAssignMail = () => {
+  const userAssignments = assignments
+  .filter(
+    assignment =>
+      assignment.assignedTo.includes(user?.id) &&
+      assignment.status === 'pending'
+  )
+  .map(assignment => {
+   
+  });
+
+  const handleAssignMail = async () => {
     if (selectedUsers.length === 0) {
-      toast({
-        title: "Erreur",
-        description: "Veuillez sélectionner au moins un utilisateur",
-        variant: "destructive",
-      });
+      toast({ title: "Erreur", description: "Veuillez sélectionner au moins un utilisateur", variant: "destructive" });
       return;
     }
-
     const assignment = {
-      id: Date.now().toString(),
       mailId: selectedMail.id,
       assignedTo: selectedUsers,
       assignedBy: user.id,
@@ -114,24 +120,23 @@ const MailAssignment = () => {
       assignedAt: new Date().toISOString(),
       status: 'pending'
     };
-
-    const updatedAssignments = assignments.filter(a => a.mailId !== selectedMail.id);
-    updatedAssignments.push(assignment);
-    
-    setAssignments(updatedAssignments);
-    localStorage.setItem('gescourrier_assignments', JSON.stringify(updatedAssignments));
-
-    toast({
-      title: "Affectation réussie",
-      description: `Le courrier a été affecté à ${selectedUsers.length} utilisateur(s).`,
+    const res = await fetch('http://localhost:4000/api/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(assignment)
     });
-
-    setIsAssignDialogOpen(false);
-    setSelectedMail(null);
-    setSelectedUsers([]);
-    setAssignmentComment('');
+    const data = await res.json();
+    if (data.success) {
+      toast({ title: "Affectation réussie", description: "Le courrier a été affecté." });
+      setIsAssignDialogOpen(false);
+      setSelectedMail(null);
+      setSelectedUsers([]);
+      setAssignmentComment('');
+      await loadData(); // recharge bien les données
+    } else {
+      toast({ title: "Erreur", description: data.error, variant: "destructive" });
+    }
   };
-
   const handleOpenAssignDialog = (mail) => {
     setSelectedMail(mail);
     setSelectedUsers(mail.assignment ? mail.assignment.assignedTo : []);
@@ -173,7 +178,7 @@ const MailAssignment = () => {
       case 'archived':
         return 'Archivé';
       default:
-        return 'Inconnu';
+        return 'Non affecté';
     }
   };
 
@@ -231,7 +236,7 @@ const MailAssignment = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="search" className="text-slate-200">Rechercher</Label>
                   <div className="relative">
@@ -246,7 +251,8 @@ const MailAssignment = () => {
                   </div>
                 </div>
                 
-                <div className="space-y-2">
+                {/* Supprime la colonne Statut du filtre */}
+                {/* <div className="space-y-2">
                   <Label className="text-slate-200">Statut</Label>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="bg-slate-800/50 border-slate-600 text-white">
@@ -260,13 +266,13 @@ const MailAssignment = () => {
                       <SelectItem value="archived" className="text-white hover:bg-slate-700">Archivés</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </div> */}
                 
                 <div className="flex items-end">
                   <Button
                     onClick={() => {
                       setSearchTerm('');
-                      setStatusFilter('all');
+                      // setStatusFilter('all'); // Supprimer setStatusFilter
                     }}
                     variant="outline"
                     className="w-full border-slate-600 text-slate-300 hover:bg-slate-700"
@@ -343,7 +349,7 @@ const MailAssignment = () => {
                           className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                         >
                           <UserCheck className="mr-2 h-4 w-4" />
-                          {mail.status === 'unassigned' ? 'Affecter' : 'Modifier'}
+                          {mail.status === 'unassigned' ? 'Affecter' : 'Affecter'}
                         </Button>
                       </div>
                     </motion.div>

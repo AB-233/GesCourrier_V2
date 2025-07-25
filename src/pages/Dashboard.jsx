@@ -8,13 +8,29 @@ const Dashboard = () => {
   const [userCount, setUserCount] = useState(0);
 
   useEffect(() => {
-    const incoming = JSON.parse(localStorage.getItem('gescourrier_incoming_mails') || '[]');
-    const outgoing = JSON.parse(localStorage.getItem('gescourrier_outgoing_mails') || '[]');
-    const users = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
-    setIncomingCount(incoming.length);
-    setOutgoingCount(outgoing.length);
-    setPendingCount(incoming.filter(m => m.status === 'pending').length);
-    setUserCount(users.length);
+    // Courriers arrivés
+    fetch('http://localhost:4000/api/incoming-mails')
+      .then(res => res.json())
+      .then(data => {
+        setIncomingCount(data.length);
+        setPendingCount(data.filter(m => m.status === 'pending').length); // si tu as un champ status
+      })
+      .catch(() => {
+        setIncomingCount(0);
+        setPendingCount(0);
+      });
+
+    // Courriers départ
+    fetch('http://localhost:4000/api/outgoing-mails')
+      .then(res => res.json())
+      .then(data => setOutgoingCount(data.length))
+      .catch(() => setOutgoingCount(0));
+
+    // Utilisateurs
+    fetch('http://localhost:4000/api/users')
+      .then(res => res.json())
+      .then(data => setUserCount(data.length))
+      .catch(() => setUserCount(0));
   }, []);
 
   return (

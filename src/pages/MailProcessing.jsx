@@ -46,22 +46,30 @@ const MailProcessing = () => {
     filterAssignments();
   }, [myAssignments, searchTerm, statusFilter]);
 
-  const loadData = () => {
-    const storedAssignments = JSON.parse(localStorage.getItem('gescourrier_assignments') || '[]');
-    const storedIncomingMails = JSON.parse(localStorage.getItem('gescourrier_incoming_mails') || '[]');
-    const storedUsers = JSON.parse(localStorage.getItem('gescourrier_users') || '[]');
-    
-    setAssignments(storedAssignments);
+  const loadData = async () => {
+    // Assignments (il faut une API dédiée côté backend)
+    const assignmentsRes = await fetch('http://localhost:4000/api/assignments');
+    const assignmentsData = await assignmentsRes.json();
+    setAssignments(Array.isArray(assignmentsData) ? assignmentsData : []);
 
-    const userAssignments = storedAssignments
+    // Courriers arrivés
+    const mailsRes = await fetch('http://localhost:4000/api/incoming-mails');
+    const mailsData = await mailsRes.json();
+
+    // Utilisateurs
+    const usersRes = await fetch('http://localhost:4000/api/users');
+    const usersData = await usersRes.json();
+
+    // Filtrer les assignments pour l'utilisateur courant
+    const userAssignments = assignmentsData
       .filter(
         assignment =>
           assignment.assignedTo.includes(user?.id) &&
-          assignment.status === 'pending' // <-- Ne garder que les "pending"
+          assignment.status === 'pending'
       )
       .map(assignment => {
-        const mail = storedIncomingMails.find(m => m.id === assignment.mailId);
-        const assignedBy = storedUsers.find(u => u.id === assignment.assignedBy);
+        const mail = mailsData.find(m => m.id === assignment.mailId);
+        const assignedBy = usersData.find(u => u.id === assignment.assignedBy);
         return {
           ...assignment,
           mail,
@@ -101,7 +109,7 @@ const MailProcessing = () => {
     setFilteredAssignments(filtered);
   };
 
-  const handleProcessMail = () => {
+  const handleProcessMail = async () => {
     if (!processingComment.trim()) {
       toast({
         title: "Erreur",
@@ -110,35 +118,33 @@ const MailProcessing = () => {
       });
       return;
     }
-
-    const updatedAssignments = assignments.map(assignment => {
-      if (assignment.id === selectedAssignment.id) {
-        return {
-          ...assignment,
-          status: 'processed',
-          processedAt: new Date().toISOString(),
-          processedBy: user.id,
-          processingComment,
-          responseFile: responseFile || null
-        };
-      }
-      return assignment;
+    const res = await fetch(`http://localhost:4000/api/assignments/${selectedAssignment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'processed',
+        processedAt: new Date().toISOString(),
+        processedBy: user.id,
+        processingComment,
+        responseFile,
+        responseFileName: responseFile ? 'reponse.pdf' : null // adapte si besoin
+      })
     });
-
-    localStorage.setItem('gescourrier_assignments', JSON.stringify(updatedAssignments));
-
-    toast({
-      title: "Courrier traité",
-      description: "Le courrier a été marqué comme traité avec succès.",
-    });
-
-    setIsProcessDialogOpen(false);
-    setSelectedAssignment(null);
-    setProcessingComment('');
-    setResponseFile('');
-    loadData();
+    const data = await res.json();
+    if (data.success) {
+      toast({
+        title: "Courrier traité",
+        description: "Le courrier a été marqué comme traité avec succès.",
+      });
+      setIsProcessDialogOpen(false);
+      setSelectedAssignment(null);
+      setProcessingComment('');
+      setResponseFile('');
+      loadData();
+    } else {
+      toast({ title: "Erreur", description: data.error, variant: "destructive" });
+    }
   };
-
   const handleOpenProcessDialog = (assignment) => {
     setSelectedAssignment(assignment);
     setProcessingComment(assignment.processingComment || '');

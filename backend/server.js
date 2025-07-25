@@ -187,6 +187,59 @@ app.delete('/api/incoming-mails/:id', async (req, res) => {
   }
 });
 
+//AFFECTATION
+
+// Liste des affectations
+app.get('/api/assignments', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM assignments');
+    // Parse assignedTo JSON
+    const assignments = rows.map(a => ({
+      ...a,
+      assignedTo: JSON.parse(a.assignedTo)
+    }));
+    res.json(assignments);
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la récupération des affectations" });
+  }
+});
+
+// Créer une affectation
+app.post('/api/assignments', async (req, res) => {
+  const { mailId, assignedTo, assignedBy, comment, assignedAt, status } = req.body;
+  try {
+    await db.query(
+      'INSERT INTO assignments (mailId, assignedTo, assignedBy, comment, assignedAt, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [mailId, JSON.stringify(assignedTo), assignedBy, comment, assignedAt, status || 'pending']
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la création de l'affectation" });
+  }
+});
+
+// Mettre à jour une affectation (traitement)
+app.put('/api/assignments/:id', async (req, res) => {
+  const { status, processedAt, processedBy, processingComment, responseFile, responseFileName } = req.body;
+  try {
+    await db.query(
+      'UPDATE assignments SET status=?, processedAt=?, processedBy=?, processingComment=?, responseFile=?, responseFileName=? WHERE id=?',
+      [
+        status,
+        processedAt,
+        processedBy,
+        processingComment,
+        responseFile ? Buffer.from(responseFile.split(',')[1], 'base64') : null,
+        responseFileName,
+        req.params.id
+      ]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la mise à jour de l'affectation" });
+  }
+});
+//DEPART
 // Ajouter un courrier départ
 app.post('/api/outgoing-mails', async (req, res) => {
   const {
