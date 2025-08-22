@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { toast } from '@/components/ui/use-toast';
 
 const AddMailDialog = ({
   isOpen,
@@ -28,6 +29,101 @@ const AddMailDialog = ({
   mailTypes,
   sources,
 }) => {
+  const [arrivalNumberError, setArrivalNumberError] = useState('');
+  const [signatureDateError, setSignatureDateError] = useState('');
+  const [checkingUnique, setCheckingUnique] = useState(false);
+
+  // Validation en temps réel du numéro d'arrivée
+  const validateArrivalNumber = (value) => {
+    if (!value) {
+      setArrivalNumberError('');
+      return;
+    }
+    
+    if (isNaN(Number(value)) || !Number.isInteger(Number(value)) || Number(value) <= 0) {
+      setArrivalNumberError('Le numéro d\'arrivée doit être un entier positif.');
+      return;
+    }
+    
+    setArrivalNumberError('');
+  };
+
+  // Validation de la date de signature
+  const validateSignatureDate = (signatureDate, arrivalDate) => {
+    if (!signatureDate || !arrivalDate) {
+      setSignatureDateError('');
+      return;
+    }
+    
+    const signature = new Date(signatureDate);
+    const arrival = new Date(arrivalDate);
+    
+    if (signature > arrival) {
+      setSignatureDateError('La date de signature ne peut pas être postérieure à la date d\'arrivée.');
+      return false;
+    }
+    
+    setSignatureDateError('');
+    return true;
+  };
+
+  // Fonction pour vérifier l'unicité du numéro d'arrivée pour l'année
+  const checkArrivalNumberUnique = async (number, year) => {
+    setCheckingUnique(true);
+    setArrivalNumberError('');
+    try {
+      const response = await fetch(`http://localhost:4000/api/incoming-mails/check-unique?year=${year}&number=${number}`);
+      const data = await response.json();
+      if (!data.unique) {
+        setArrivalNumberError('Ce numéro d\'arrivée existe déjà pour cette année.');
+        return false;
+      }
+      return true;
+    } catch (err) {
+      setArrivalNumberError("Erreur lors de la vérification d'unicité.");
+      return false;
+    } finally {
+      setCheckingUnique(false);
+    }
+  };
+
+  // Handler personnalisé pour l'ajout
+  const handleAddMailWithCheck = async () => {
+    const year = newMail.arrivalDate ? new Date(newMail.arrivalDate).getFullYear() : '';
+    const number = newMail.arrivalNumber;
+    if (!number || !year) {
+      setArrivalNumberError('Veuillez saisir un numéro et une date valides.');
+      return;
+    }
+    if (!newMail.arrivalNumber || isNaN(Number(newMail.arrivalNumber)) || !Number.isInteger(Number(newMail.arrivalNumber))) {
+      toast({
+        title: "Erreur",
+        description: "Le numéro d'arrivée doit être un entier.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validation de la date de signature
+    if (newMail.signatureDate && newMail.arrivalDate) {
+      if (!validateSignatureDate(newMail.signatureDate, newMail.arrivalDate)) {
+        toast({
+          title: "Erreur",
+          description: "La date de signature ne peut pas être postérieure à la date d'arrivée.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    
+    const isUnique = await checkArrivalNumberUnique(number, year);
+    if (isUnique) {
+      setArrivalNumberError('');
+      setSignatureDateError('');
+      handleAddMail();
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -45,7 +141,14 @@ const AddMailDialog = ({
                 id="arrivalDate"
                 type="date"
                 value={newMail.arrivalDate}
-                onChange={(e) => setNewMail({ ...newMail, arrivalDate: e.target.value })}
+                onChange={(e) => {
+                  setNewMail({ ...newMail, arrivalDate: e.target.value });
+                  // Vérifier l'unicité si on a déjà un numéro
+                  if (newMail.arrivalNumber && e.target.value) {
+                    const year = new Date(e.target.value).getFullYear();
+                    checkArrivalNumberUnique(newMail.arrivalNumber, year);
+                  }
+                }}
                 className="bg-slate-700 border-slate-600 text-white"
                 required
               />
@@ -66,12 +169,36 @@ const AddMailDialog = ({
               <Label htmlFor="arrivalNumber" className="text-slate-200">Numéro d'arrivée *</Label>
               <Input
                 id="arrivalNumber"
-                placeholder="Ex: ARR-2024-001"
+                type="number"
+                min="1"
+                step="1"
                 value={newMail.arrivalNumber}
-                onChange={(e) => setNewMail({ ...newMail, arrivalNumber: e.target.value })}
+                onChange={e => {
+                  const value = e.target.value.replace(/[^0-9]/g, '');
+                  setNewMail({ ...newMail, arrivalNumber: value });
+                  validateArrivalNumber(value);
+                }}
+                onBlur={async () => {
+                  if (newMail.arrivalNumber && newMail.arrivalDate) {
+                    const year = new Date(newMail.arrivalDate).getFullYear();
+                    await checkArrivalNumberUnique(newMail.arrivalNumber, year);
+                  }
+                }}
                 className="bg-slate-700 border-slate-600 text-white"
                 required
               />
+              {arrivalNumberError && (
+                <span className="text-xs text-red-400 flex items-center">
+                  {checkingUnique ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400 mr-2"></div>
+                      Vérification en cours...
+                    </>
+                  ) : (
+                    arrivalNumberError
+                  )}
+                </span>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="signatureDate" className="text-slate-200">Date de signature</Label>
@@ -79,9 +206,21 @@ const AddMailDialog = ({
                 id="signatureDate"
                 type="date"
                 value={newMail.signatureDate}
-                onChange={(e) => setNewMail({ ...newMail, signatureDate: e.target.value })}
+                onChange={(e) => {
+                  const newSignatureDate = e.target.value;
+                  setNewMail({ ...newMail, signatureDate: newSignatureDate });
+                  if (newSignatureDate && newMail.arrivalDate) {
+                    validateSignatureDate(newSignatureDate, newMail.arrivalDate);
+                  }
+                }}
+                max={newMail.arrivalDate || undefined}
                 className="bg-slate-700 border-slate-600 text-white"
               />
+              {signatureDateError && (
+                <span className="text-xs text-red-400">
+                  {signatureDateError}
+                </span>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -193,8 +332,9 @@ const AddMailDialog = ({
             Annuler
           </Button>
           <Button
-            onClick={handleAddMail}
+            onClick={handleAddMailWithCheck}
             className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            disabled={checkingUnique}
           >
             Enregistrer
           </Button>

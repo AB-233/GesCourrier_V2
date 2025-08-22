@@ -1,4 +1,6 @@
 import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Paperclip } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +12,22 @@ import { Label } from '@/components/ui/label';
 
 const ViewMailDialog = ({ isOpen, setIsOpen, selectedMail }) => {
   if (!selectedMail) return null;
+
+  const handleDownload = async () => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/incoming-mails/${selectedMail.id}/attachment`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = selectedMail.attachmentName || 'piece-jointe';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {}
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -56,15 +74,10 @@ const ViewMailDialog = ({ isOpen, setIsOpen, selectedMail }) => {
           <div>
             <Label className="text-slate-200">Pièce jointe :</Label>
             {selectedMail.attachmentName ? (
-              <a
-                href={`data:application/octet-stream;base64,${selectedMail.attachment}`}
-                download={selectedMail.attachmentName}
-                className="text-blue-400 underline"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <Button onClick={handleDownload} variant="link" className="text-blue-400 p-0 h-auto">
+                <Paperclip className="mr-1 h-3 w-3" />
                 {selectedMail.attachmentName}
-              </a>
+              </Button>
             ) : (
               <span className="text-slate-400">Aucune</span>
             )}

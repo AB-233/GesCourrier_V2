@@ -37,6 +37,7 @@ const MailAssignment = () => {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedMail, setSelectedMail] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [assignAllUsers, setAssignAllUsers] = useState(false);
   const [assignmentComment, setAssignmentComment] = useState('');
 
   useEffect(() => {
@@ -139,6 +140,7 @@ const MailAssignment = () => {
   };
   const handleOpenAssignDialog = (mail) => {
     setSelectedMail(mail);
+    setAssignAllUsers(false);
     setSelectedUsers(mail.assignment ? mail.assignment.assignedTo : []);
     setAssignmentComment(mail.assignment ? mail.assignment.comment : '');
     setIsAssignDialogOpen(true);
@@ -378,6 +380,19 @@ const MailAssignment = () => {
 
                 <div className="space-y-4">
                   <Label className="text-slate-200">Sélectionner les utilisateurs</Label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      id="assign-all-users"
+                      type="checkbox"
+                      checked={assignAllUsers}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setAssignAllUsers(checked);
+                        setSelectedUsers(checked ? users.map(u => u.id) : []);
+                      }}
+                    />
+                    <Label htmlFor="assign-all-users" className="text-slate-200">Affecter à tous les utilisateurs</Label>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto p-2 border border-slate-700 rounded-md">
                     {users.map((user) => (
                       <div
@@ -388,6 +403,7 @@ const MailAssignment = () => {
                           id={`user-${user.id}`}
                           checked={selectedUsers.includes(user.id)}
                           onCheckedChange={() => toggleUserSelection(user.id)}
+                          disabled={assignAllUsers}
                           className="border-slate-500"
                         />
                         <div className="flex-1">
@@ -402,6 +418,7 @@ const MailAssignment = () => {
                       </div>
                     ))}
                   </div>
+                  <div className="text-xs text-slate-400">{selectedUsers.length} utilisateur(s) sélectionné(s)</div>
                 </div>
 
                 <div className="space-y-2">

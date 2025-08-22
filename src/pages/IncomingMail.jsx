@@ -115,6 +115,27 @@ const IncomingMail = () => {
     setFilteredMails(filtered);
   };
 
+  const handleDownloadIncomingAttachment = async (mailId, filename) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/incoming-mails/${mailId}/attachment`);
+      if (!res.ok) {
+        toast({ title: "Erreur", description: "Pièce jointe introuvable", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'piece-jointe';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau lors du téléchargement", variant: "destructive" });
+    }
+  };
+
   // Ajouter un courrier via l'API
   const handleAddMail = async () => {
     if (!newMail.arrivalDate || !newMail.arrivalNumber || !newMail.subject || !newMail.source || !newMail.type) {
@@ -379,18 +400,15 @@ const IncomingMail = () => {
                               <Calendar className="mr-1 h-3 w-3" />
                               {mail.arrivalDate ? new Date(mail.arrivalDate).toLocaleDateString('fr-FR') : ''}
                             </span>
-                            {mail.attachmentName && (
-                              <span className="flex items-center">
-                                <Paperclip className="mr-1 h-3 w-3" />
-                               <a
-                                href={`http://localhost:4000/api/incoming-mails/${mail.id}/attachment`}
-                                className="text-blue-400 underline ml-1"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                            {mail.hasAttachment && (
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadIncomingAttachment(mail.id, mail.attachmentName)}
+                                className="flex items-center text-blue-400 underline ml-1"
                               >
+                                <Paperclip className="mr-1 h-3 w-3" />
                                 Télécharger
-                              </a>
-                              </span>
+                              </button>
                             )}
                           </div>
                         </div>

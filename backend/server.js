@@ -96,7 +96,21 @@ app.post('/api/incoming-mails', async (req, res) => {
     receptionist,
     observations
   } = req.body;
+  
   try {
+    // Vérifier l'unicité du numéro d'arrivée pour l'année
+    const year = new Date(arrivalDate).getFullYear();
+    const [existingMails] = await db.query(
+      'SELECT id FROM incoming_mails WHERE YEAR(arrivalDate) = ? AND arrivalNumber = ?',
+      [year, arrivalNumber]
+    );
+    
+    if (existingMails.length > 0) {
+      return res.status(400).json({ 
+        error: `Le numéro d'arrivée ${arrivalNumber} existe déjà pour l'année ${year}` 
+      });
+    }
+    
     await db.query(
       `INSERT INTO incoming_mails 
         (arrivalDate, arrivalTime, arrivalNumber, signatureDate, signatureNumber, source, type, subject, attachment, attachmentName, receptionist, observations) 
@@ -122,11 +136,51 @@ app.post('/api/incoming-mails', async (req, res) => {
   }
 });
 
+// Vérifier l'unicité du numéro d'arrivée pour une année donnée
+app.get('/api/incoming-mails/check-unique', async (req, res) => {
+  const { year, number, excludeId } = req.query;
+  try {
+    let query = 'SELECT id FROM incoming_mails WHERE YEAR(arrivalDate) = ? AND arrivalNumber = ?';
+    let params = [year, number];
+    
+    // Si on exclut un ID (pour l'édition), on l'ajoute à la requête
+    if (excludeId) {
+      query += ' AND id != ?';
+      params.push(excludeId);
+    }
+    
+    const [rows] = await db.query(query, params);
+    res.json({ unique: rows.length === 0 });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la vérification d'unicité" });
+  }
+});
+
+// Vérifier l'unicité du numéro de signature pour une année donnée
+app.get('/api/outgoing-mails/check-unique', async (req, res) => {
+  const { year, number, excludeId } = req.query;
+  try {
+    let query = 'SELECT id FROM outgoing_mails WHERE YEAR(signatureDate) = ? AND signatureNumber = ?';
+    let params = [year, number];
+    
+    // Si on exclut un ID (pour l'édition), on l'ajoute à la requête
+    if (excludeId) {
+      query += ' AND id != ?';
+      params.push(excludeId);
+    }
+    
+    const [rows] = await db.query(query, params);
+    res.json({ unique: rows.length === 0 });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la vérification d'unicité" });
+  }
+});
+
 // Liste des courriers arrivée
 app.get('/api/incoming-mails', async (req, res) => {
   try {
     const [send] = await db.query(
-      'SELECT id, arrivalDate, arrivalTime, arrivalNumber, signatureDate, signatureNumber, source, type, subject, attachmentName, receptionist, observations, createdAt FROM incoming_mails ORDER BY arrivalDate DESC'
+      'SELECT id, arrivalDate, arrivalTime, arrivalNumber, signatureDate, signatureNumber, source, type, subject, attachmentName, (attachment IS NOT NULL) AS hasAttachment, receptionist, observations, createdAt FROM incoming_mails ORDER BY arrivalDate DESC'
     );
     res.json(send);
   } catch (error) {
@@ -150,7 +204,21 @@ app.put('/api/incoming-mails/:id', async (req, res) => {
     receptionist,
     observations
   } = req.body;
+  
   try {
+    // Vérifier l'unicité du numéro d'arrivée pour l'année (en excluant le courrier actuel)
+    const year = new Date(arrivalDate).getFullYear();
+    const [existingMails] = await db.query(
+      'SELECT id FROM incoming_mails WHERE YEAR(arrivalDate) = ? AND arrivalNumber = ? AND id != ?',
+      [year, arrivalNumber, req.params.id]
+    );
+    
+    if (existingMails.length > 0) {
+      return res.status(400).json({ 
+        error: `Le numéro d'arrivée ${arrivalNumber} existe déjà pour l'année ${year}` 
+      });
+    }
+    
     await db.query(
       `UPDATE incoming_mails SET 
         arrivalDate=?, arrivalTime=?, arrivalNumber=?, signatureDate=?, signatureNumber=?, source=?, type=?, subject=?, attachment=?, attachmentName=?, receptionist=?, observations=? 
@@ -239,6 +307,27 @@ app.put('/api/assignments/:id', async (req, res) => {
     res.status(500).json({ error: "Erreur lors de la mise à jour de l'affectation" });
   }
 });
+
+// Réaffecter une affectation à d'autres utilisateurs
+app.put('/api/assignments/:id/reassign', async (req, res) => {
+  const { assignedTo, assignedBy, comment } = req.body;
+  try {
+    await db.query(
+      'UPDATE assignments SET assignedTo=?, assignedBy=?, comment=?, assignedAt=?, status=?, processedAt=NULL, processedBy=NULL, processingComment=NULL, responseFile=NULL, responseFileName=NULL WHERE id=?',
+      [
+        JSON.stringify(Array.isArray(assignedTo) ? assignedTo : []),
+        assignedBy,
+        comment || null,
+        new Date().toISOString(),
+        'pending',
+        req.params.id
+      ]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la réaffectation" });
+  }
+});
 //DEPART
 // Ajouter un courrier départ
 app.post('/api/outgoing-mails', async (req, res) => {
@@ -255,7 +344,21 @@ app.post('/api/outgoing-mails', async (req, res) => {
     transmissionNumber,
     observations,
   } = req.body;
+  
   try {
+    // Vérifier l'unicité du numéro de signature pour l'année
+    const year = new Date(signatureDate).getFullYear();
+    const [existingMails] = await db.query(
+      'SELECT id FROM outgoing_mails WHERE YEAR(signatureDate) = ? AND signatureNumber = ?',
+      [year, signatureNumber]
+    );
+    
+    if (existingMails.length > 0) {
+      return res.status(400).json({ 
+        error: `Le numéro de signature ${signatureNumber} existe déjà pour l'année ${year}` 
+      });
+    }
+    
     await db.query(
       `INSERT INTO outgoing_mails 
         (signatureDate, signatureNumber, destination, subject, attachment, attachmentName, receptionist, transmissionDate, transmissionTime, transmissionNumber, observations) 
@@ -309,7 +412,21 @@ app.put('/api/outgoing-mails/:id', async (req, res) => {
     transmissionNumber,
     observations,
   } = req.body;
+  
   try {
+    // Vérifier l'unicité du numéro de signature pour l'année (en excluant le courrier actuel)
+    const year = new Date(signatureDate).getFullYear();
+    const [existingMails] = await db.query(
+      'SELECT id FROM outgoing_mails WHERE YEAR(signatureDate) = ? AND signatureNumber = ? AND id != ?',
+      [year, signatureNumber, req.params.id]
+    );
+    
+    if (existingMails.length > 0) {
+      return res.status(400).json({ 
+        error: `Le numéro de signature ${signatureNumber} existe déjà pour l'année ${year}` 
+      });
+    }
+    
     await db.query(
       `UPDATE outgoing_mails SET 
     signatureDate=?, signatureNumber=?, destination=?, subject=?, attachment=?, attachmentName=?, receptionist=?, transmissionDate=?, transmissionTime=?, transmissionNumber=?, observations=? 
@@ -383,3 +500,4 @@ app.get('/api/incoming-mails/:id/attachment', async (req, res) => {
 });
 
 app.listen(4000, () => console.log('API running on http://localhost:4000'));
+

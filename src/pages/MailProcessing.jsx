@@ -81,6 +81,27 @@ const MailProcessing = () => {
     setMyAssignments(userAssignments);
   };
 
+  const handleDownloadIncomingAttachment = async (mailId, filename) => {
+    try {
+      const res = await fetch(`http://localhost:4000/api/incoming-mails/${mailId}/attachment`);
+      if (!res.ok) {
+        toast({ title: "Erreur", description: "Pièce jointe introuvable", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'piece-jointe';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({ title: "Erreur", description: "Erreur réseau lors du téléchargement", variant: "destructive" });
+    }
+  };
+
   const filterAssignments = () => {
     let filtered = myAssignments;
 
@@ -303,19 +324,15 @@ const MailProcessing = () => {
                               <User className="mr-1 h-3 w-3" />
                               Affecté par {assignment.assignedByUser?.firstName}
                             </span>
-                            {assignment.mail?.attachment && (
-                              <span className="flex items-center">
+                            {assignment.mail?.hasAttachment && (
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadIncomingAttachment(assignment.mail.id, assignment.mail.attachmentName)}
+                                className="flex items-center text-blue-400 underline ml-1"
+                              >
                                 <Paperclip className="mr-1 h-3 w-3" />
-                                <a
-                                  href={assignment.mail.attachment}
-                                  download={assignment.mail.attachmentName || "piece-jointe"}
-                                  className="text-blue-400 underline ml-1"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  Télécharger la pièce jointe
-                                </a>
-                              </span>
+                                Télécharger la pièce jointe
+                              </button>
                             )}
                           </div>
                         </div>
@@ -350,7 +367,7 @@ const MailProcessing = () => {
         </motion.div>
 
         <Dialog open={isProcessDialogOpen} onOpenChange={setIsProcessDialogOpen}>
-          <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl">
+          <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Traiter le courrier</DialogTitle>
               <DialogDescription className="text-slate-400">
@@ -359,10 +376,60 @@ const MailProcessing = () => {
             </DialogHeader>
             
             {selectedAssignment && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <div className="p-4 bg-slate-700/50 rounded-lg">
                   <h4 className="font-medium text-white mb-2">Courrier à traiter</h4>
                   <p className="text-sm text-slate-300">{selectedAssignment.mail.arrivalNumber} - {selectedAssignment.mail.subject}</p>
+                  {selectedAssignment.mail?.hasAttachment && (
+                    <div className="mt-2 text-xs text-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadIncomingAttachment(selectedAssignment.mail.id, selectedAssignment.mail.attachmentName)}
+                        className="flex items-center text-blue-400 underline"
+                      >
+                        <Paperclip className="mr-1 h-3 w-3" />
+                        Télécharger la pièce jointe
+                      </button>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm">
+                    <div>
+                      <Label className="text-slate-400">Date d'arrivée</Label>
+                      <div className="text-white">{selectedAssignment.mail.arrivalDate || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Heure d'arrivée</Label>
+                      <div className="text-white">{selectedAssignment.mail.arrivalTime || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Type</Label>
+                      <div className="text-white">{selectedAssignment.mail.type || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Source</Label>
+                      <div className="text-white">{selectedAssignment.mail.source || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Date de signature</Label>
+                      <div className="text-white">{selectedAssignment.mail.signatureDate || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Numéro de signature</Label>
+                      <div className="text-white">{selectedAssignment.mail.signatureNumber || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Réceptionniste</Label>
+                      <div className="text-white">{selectedAssignment.mail.receptionist || '-'}</div>
+                    </div>
+                    <div>
+                      <Label className="text-slate-400">Créé le</Label>
+                      <div className="text-white">{selectedAssignment.mail.createdAt ? new Date(selectedAssignment.mail.createdAt).toLocaleString('fr-FR') : '-'}</div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label className="text-slate-400">Observations</Label>
+                      <div className="text-white whitespace-pre-wrap">{selectedAssignment.mail.observations || '-'}</div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -424,20 +491,74 @@ const MailProcessing = () => {
         </Dialog>
 
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-          <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl">
+          <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Détails de l'affectation</DialogTitle>
             </DialogHeader>
             
             {selectedAssignment && (
               <div className="space-y-4">
-                <div>
-                  <Label className="text-slate-400">Objet</Label>
-                  <p className="text-white">{selectedAssignment.mail.subject}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-400">Instructions</Label>
-                  <p className="text-white">{selectedAssignment.comment || "Aucune instruction"}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <Label className="text-slate-400">Numéro d'arrivée</Label>
+                    <div className="text-white">{selectedAssignment.mail.arrivalNumber || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Objet</Label>
+                    <div className="text-white">{selectedAssignment.mail.subject || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Date d'arrivée</Label>
+                    <div className="text-white">{selectedAssignment.mail.arrivalDate || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Heure d'arrivée</Label>
+                    <div className="text-white">{selectedAssignment.mail.arrivalTime || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Type</Label>
+                    <div className="text-white">{selectedAssignment.mail.type || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Source</Label>
+                    <div className="text-white">{selectedAssignment.mail.source || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Date de signature</Label>
+                    <div className="text-white">{selectedAssignment.mail.signatureDate || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Numéro de signature</Label>
+                    <div className="text-white">{selectedAssignment.mail.signatureNumber || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Réceptionniste</Label>
+                    <div className="text-white">{selectedAssignment.mail.receptionist || '-'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-slate-400">Créé le</Label>
+                    <div className="text-white">{selectedAssignment.mail.createdAt ? new Date(selectedAssignment.mail.createdAt).toLocaleString('fr-FR') : '-'}</div>
+                  </div>
+                  {selectedAssignment.mail?.hasAttachment && (
+                    <div className="md:col-span-2 text-xs text-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadIncomingAttachment(selectedAssignment.mail.id, selectedAssignment.mail.attachmentName)}
+                        className="flex items-center text-blue-400 underline"
+                      >
+                        <Paperclip className="mr-1 h-3 w-3" />
+                        Télécharger la pièce jointe
+                      </button>
+                    </div>
+                  )}
+                  <div className="md:col-span-2">
+                    <Label className="text-slate-400">Instructions</Label>
+                    <div className="text-white whitespace-pre-wrap">{selectedAssignment.comment || 'Aucune instruction'}</div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label className="text-slate-400">Observations</Label>
+                    <div className="text-white whitespace-pre-wrap">{selectedAssignment.mail.observations || '-'}</div>
+                  </div>
                 </div>
               </div>
             )}

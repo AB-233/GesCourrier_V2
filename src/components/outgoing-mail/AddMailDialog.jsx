@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { toast } from '@/components/ui/use-toast';
 
 const AddMailDialog = ({ 
   isOpen, 
@@ -27,6 +28,88 @@ const AddMailDialog = ({
   handleAddMail, 
   destinations,
  }) => {
+  const [signatureNumberError, setSignatureNumberError] = useState('');
+  const [checkingUnique, setCheckingUnique] = useState(false);
+
+  // Validation en temps réel du numéro de signature
+  const validateSignatureNumber = (value) => {
+    if (!value) {
+      setSignatureNumberError('');
+      return;
+    }
+    
+    if (isNaN(Number(value)) || !Number.isInteger(Number(value)) || Number(value) <= 0) {
+      setSignatureNumberError('Le numéro de signature doit être un entier positif.');
+      return;
+    }
+    
+    setSignatureNumberError('');
+  };
+
+  // Fonction pour vérifier l'unicité du numéro de signature pour l'année
+  const checkSignatureNumberUnique = async (number, year) => {
+    setCheckingUnique(true);
+    setSignatureNumberError('');
+    try {
+      const response = await fetch(`http://localhost:4000/api/outgoing-mails/check-unique?year=${year}&number=${number}`);
+      const data = await response.json();
+      if (!data.unique) {
+        setSignatureNumberError('Ce numéro de signature existe déjà pour cette année.');
+        return false;
+      }
+      return true;
+    } catch (err) {
+      setSignatureNumberError("Erreur lors de la vérification d'unicité.");
+      return false;
+    } finally {
+      setCheckingUnique(false);
+    }
+  };
+
+  // Handler personnalisé pour l'ajout
+  const handleAddMailWithCheck = async () => {
+    const year = newMail.signatureDate ? new Date(newMail.signatureDate).getFullYear() : '';
+    const number = newMail.signatureNumber;
+    if (!number || !year) {
+      setSignatureNumberError('Veuillez saisir un numéro et une date valides.');
+      return;
+    }
+    if (!newMail.signatureNumber || isNaN(Number(newMail.signatureNumber)) || !Number.isInteger(Number(newMail.signatureNumber))) {
+      toast({
+        title: "Erreur",
+        description: "Le numéro de signature doit être un entier.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const isUnique = await checkSignatureNumberUnique(number, year);
+    if (isUnique) {
+      setSignatureNumberError('');
+      try {
+        await handleAddMail();
+        // Fermer le formulaire après un enregistrement réussi
+        setIsOpen(false);
+        // Réinitialiser le formulaire
+        setNewMail({
+          signatureDate: '',
+          signatureNumber: '',
+          destination: '',
+          subject: '',
+          attachment: '',
+          attachmentName: '',
+          receptionist: '',
+          transmissionDate: '',
+          transmissionTime: '',
+          transmissionNumber: '',
+          observations: ''
+        });
+      } catch (error) {
+        // En cas d'erreur, ne pas fermer le formulaire
+        console.error('Erreur lors de l\'enregistrement:', error);
+      }
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -44,7 +127,14 @@ const AddMailDialog = ({
                 id="signatureDate"
                 type="date"
                 value={newMail.signatureDate}
-                onChange={(e) => setNewMail({ ...newMail, signatureDate: e.target.value })}
+                onChange={(e) => {
+                  setNewMail({ ...newMail, signatureDate: e.target.value });
+                  // Vérifier l'unicité si on a déjà un numéro
+                  if (newMail.signatureNumber && e.target.value) {
+                    const year = new Date(e.target.value).getFullYear();
+                    checkSignatureNumberUnique(newMail.signatureNumber, year);
+                  }
+                }}
                 className="bg-slate-700 border-slate-600 text-white"
                 required
               />
@@ -53,12 +143,36 @@ const AddMailDialog = ({
               <Label htmlFor="signatureNumber" className="text-slate-200">Numéro de signature *</Label>
               <Input
                 id="signatureNumber"
-                placeholder="Ex: SIG-2024-001"
+                type="number"
+                min="1"
+                step="1"
                 value={newMail.signatureNumber}
-                onChange={(e) => setNewMail({ ...newMail, signatureNumber: e.target.value })}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^0-9]/g, '');
+                  setNewMail({ ...newMail, signatureNumber: value });
+                  validateSignatureNumber(value);
+                }}
+                onBlur={async () => {
+                  if (newMail.signatureNumber && newMail.signatureDate) {
+                    const year = new Date(newMail.signatureDate).getFullYear();
+                    await checkSignatureNumberUnique(newMail.signatureNumber, year);
+                  }
+                }}
                 className="bg-slate-700 border-slate-600 text-white"
                 required
               />
+              {signatureNumberError && (
+                <span className="text-xs text-red-400 flex items-center">
+                  {checkingUnique ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-400 mr-2"></div>
+                      Vérification en cours...
+                    </>
+                  ) : (
+                    signatureNumberError
+                  )}
+                </span>
+              )}
             </div>
           </div>
           <div className="space-y-2">
@@ -177,8 +291,9 @@ const AddMailDialog = ({
             Annuler
           </Button>
           <Button
-            onClick={handleAddMail}
+            onClick={handleAddMailWithCheck}
             className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+            disabled={checkingUnique}
           >
             Enregistrer
           </Button>
