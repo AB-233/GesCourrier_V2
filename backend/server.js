@@ -1,17 +1,20 @@
+require('dotenv').config();
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: false }));
 app.use(express.json());
 
+// Connexion à la base de données avec variables d'environnement
 const db = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'gescourrier'
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT // optionnel, selon ton hébergeur
 });
 
 // Inscription
@@ -499,5 +502,9 @@ app.get('/api/incoming-mails/:id/attachment', async (req, res) => {
   }
 });
 
-app.listen(4000, () => console.log('API running on https://vercel.com'));
+// Utilise process.env.PORT ou 4000 par défaut
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Serveur backend démarré sur le port ${PORT}`);
+});
 
