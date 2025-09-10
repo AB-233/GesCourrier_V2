@@ -4,7 +4,7 @@ const API_CONFIG = {
   development: 'http://localhost:4000',
   
   // URL de production (à modifier selon votre déploiement)
-  production: 'https://votre-backend-url.com',
+  production: 'https://gescourrier-v2-1.onrender.com',
   
   // URL actuelle basée sur l'environnement
   get current() {

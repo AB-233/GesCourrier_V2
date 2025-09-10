@@ -499,5 +499,5 @@ app.get('/api/incoming-mails/:id/attachment', async (req, res) => {
   }
 });
 
-app.listen(4000, () => console.log('API running on http://localhost:4000'));
+app.listen(4000, () => console.log('API running on https://vercel.com'));
 
