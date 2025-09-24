@@ -1,4 +1,5 @@
-require('dotenv').config();
+import dotenv from 'dotenv';
+dotenv.config();
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
@@ -392,7 +393,7 @@ app.post('/api/outgoing-mails', async (req, res) => {
 app.get('/api/outgoing-mails', async (req, res) => {
   try {
     const [mails] = await db.query(
-      'SELECT id, signatureDate, signatureNumber, destination, subject, attachment, attachmentName, receptionist, transmissionDate, transmissionTime, transmissionNumber, observations, createdAt FROM outgoing_mails ORDER BY signatureDate DESC'
+      'SELECT id, signatureDate, signatureNumber, destination, subject, attachmentName, (attachment IS NOT NULL) AS hasAttachment, receptionist, transmissionDate, transmissionTime, transmissionNumber, observations, createdAt FROM outgoing_mails ORDER BY signatureDate DESC'
     );
     res.json(mails);
   } catch (error) {
@@ -503,8 +504,9 @@ app.get('/api/incoming-mails/:id/attachment', async (req, res) => {
 });
 
 // Utilise process.env.PORT ou 4000 par défaut
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Serveur backend démarré sur le port ${PORT}`);
-});
+//const PORT = process.env.PORT || 4000;
+//app.listen(PORT, () => {
+  //console.log(`Serveur backend démarré sur le port ${PORT}`);
+//});
 
+app.listen(4000, () => console.log('API running on http://localhost:4000'));
